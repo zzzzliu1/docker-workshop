@@ -943,6 +943,222 @@ docker run test:pandas 12
 
 
 
+### 另一种把uv创建的虚拟环境加入 PATH
+
+``` bash
+FROM python:3.13.11-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+
+WORKDIR /code
+
+ENV PATH="/code/.venv/bin:$PATH"
+
+COPY pyproject.toml .python-version uv.lock ./
+
+RUN uv sync --locked
+
+COPY pipeline.py .
+
+ENTRYPOINT ["python", "pipeline.py"]
+
+```
+因为当前Dockerfile中：
+```
+WORKDIR /code
+```
+
+所以虚拟环境路径是：
+```
+/code/.venv/bin
+```
+
+
+## Data Engineering -> PostgreSQL -> NY Taxi 数据导入
+- 在Docker中启动一个PostgreSQL 18 数据库服务器，并自动创建：
+```text
+用户：root
+密码：root
+数据库：ny_taxi
+端口： 5432
+数据卷： ny_taxi_postgres_data
+```
+为后续的python -> Pandas -> PostgreSQL -> Data Engineering Pipeline 做准备
+
+
+```bash
+> docker run -it --rm \
+  -e POSTGRES_USER="root" \
+  -e POSTGRES_PASSWORD="root" \
+  -e POSTGRES_DB="ny_taxi" \
+  -v ny_taxi_postgres_data:/var/lib/postgresql \
+  -p 5432:5432 \
+  postgres:18
+```
+
+整体流程：
+``` text
+docker run
+    ↓
+启动Postgres：18 镜像
+    ↓
+创建用户root
+    ↓
+创建密码root
+    ↓
+创建数据库 ny_taxi
+    ↓
+挂载 Volume 保存数据
+    ↓
+映射端口5432
+    ↓
+PostgreSQL 服务启动
+    ↓
+本机可以连接数据库
+
+```
+
+
+
+
+
+第七部分：
+```bash
+-v ny_taxi_postgres_data:/var/lib/postgresql
+```
+这是最重要的一部分。
+
+为什么需要Volume？
+如果不挂载
+``` text
+删除容器
+↓
+数据全部消失
+```
+
+例如：
+```
+CREATE TABLE yellow_taxi;
+```
+然后：
+```
+docker rm
+```
+
+数据没了
+
+使用Volume：
+```
+-v
+```
+表示：
+```
+挂载Volume
+```
+
+Docker 自动创建：
+```
+ny_taxi_postgres_data
+```
+映射到容器：
+``` text
+/var/lib/postgresql
+```
+
+
+实际结构：
+``` text
+Host
+
+ny_taxi_postgres_data
+      ↓
+Container
+
+/var/lib/postgresql
+```
+
+所以：
+删除容器
+数据库仍然存在
+
+
+查看:
+```
+docker volume ls
+```
+会看到：
+```
+ny_taxi_postgres_data
+```
+
+``` bash
+-p 5432:5432
+```
+
+端口映射：
+格式：主机端口:容器端口
+
+PostgreSQL默认：5432
+意思是：
+```
+本机 5432
+      ↓
+容器 5432
+```
+
+这样：
+```bash
+localhost:5432
+```
+就能连接PostgreSQL
+
+
+后面会使用：
+```
+pgcli
+```
+或者
+```
+psql
+```
+连接：
+```
+pgcli -h localhost -p 5432 -u root -d ny_taxi
+```
+
+
+第九部分：
+```bash
+postgres:18
+```
+表示：
+```
+镜像名称：版本
+```
+
+即：
+```
+postgres:18
+```
+
+表示：
+镜像名称： 版本
+
+即：
+Image：
+postgres
+Tag：
+18
+
+完整：Postgres：18
+
+Docker 会：
+先检查本地有没有
+如果没有：
+自动从 Docker Hub 下载
+
+类似：
+docker pull Postgres：18
 
 
 
