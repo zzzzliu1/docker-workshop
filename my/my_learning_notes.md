@@ -229,12 +229,79 @@ ls -a
 说明这三个文件已经成功复制进Docker容器的 `/code` 目录
 
 
+# ==========================================
+# PostgreSQL + pgcli Docker Demo
+# ==========================================
+
+```bash
+# 1. 进入pipeline项目目录
+cd/workspaces/docker-workshop/pipeline
 
 
+# 2.激活当前项目的python虚拟环境
+source .venv/bin/activate
+
+# 3. 安装pgcli，作为PostgreSQL 命令行客户端
+uv add --dev pgcli
+
+# 4. 连接正在运行的PostgreSQL容器
+# 参数说明：
+# -h localhost      连接本机 localhost
+# -p 5432           PostgreSQL 默认端口
+# -u root           数据库用户名
+# -d ny_taxi        数据库名称
+uv run pgcli -h localhost -p 5432 -u root -d ny_taxi
+
+# 连接时输入密码：
+# root
+```
+
+进入 pgcli 后执行：
+
+``` text
+-- 5. 查看当前数据库中的表
+\dt
+
+-- 6. 创建测试表
+CREATE TABLE test (
+    id INTEGER,
+    name VARCHAR(50)
+);
+
+-- 7. 插入一条测试数据
+INSERT INTO test VALUES (1, 'Hello Docker');
+
+-- 8. 查询测试表内容
+SELECT * FROM test;
+
+-- 9. 再次查看数据库表
+\dt
+```
 
 
+# 进入流程整体在做一件事：
+``` text
+进入pipeline项目
+    ↓
+激活python 虚拟环境
+    ↓
+使用uv 安装pgcli
+    ↓
+连接Docker中运行的PostgreSQL 数据库
+    ↓
+进入ny_taxi数据库
+    ↓
+创建test表
+    ↓
+插入Hello Docker 测试数据
+    ↓
+查询数据，验证PostgreSQL可用
+```
 
-
+最终验证：
+Docker PostgreSQL 容器正在运行
+pgcli 可以成功连接数据库
+SQL 可以正常创建表、插入数据、查询数据
 
 
 
