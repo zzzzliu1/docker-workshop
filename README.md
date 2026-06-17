@@ -840,9 +840,103 @@ docker run 运行容器
 
 
 
+# 用dockerfile 构建一个带uv的python 镜像，并通过 `docker run test:pandas 12 `成功运行pipeline。
 
+## Docker+uv+Python Pipeline总结
+本次练习的目标是： 把一个Python pipeline项目打包进Docker 镜像中，并使用uv管理依赖，最后通过Docker容器运行 `pipeline.py 12`
 
+### Dockerfile 内容
 
+```dockerfile
+FROM python:3.13.11-slim          # 使用 Python 3.13.11 的轻量版镜像作为基础环境。
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/            # 从 uv 官方镜像中复制 uv 工具到当前镜像中。
+
+WORKDIR /code                  # 设置容器内部工作目录为 /code。
+
+COPY pyproject.toml .python-version uv.lock ./               # 复制 uv 项目的核心配置文件到容器中。
+
+RUN uv sync --locked                   # 根据 uv.lock 安装固定版本的依赖，保证环境可复现。
+
+COPY pipeline.py .                         # 把本地的 pipeline.py 复制到容器的 /code 目录。
+
+ENTRYPOINT ["uv", "run", "python", "pipeline.py"]
+```
+
+设置容器启动时默认执行：
+```bash
+uv run python pipeline.py
+```
+因此运行：
+``` bash
+docker run -it --rm test:pandas 12
+```
+
+就等价于在容器内部执行：
+``` bash
+uv run python pipeline.py 12
+```
+
+正确终端流程：
+``` bash
+
+# 进入pipeline目录
+cd /workspaces/docker-workshop/pipeline
+
+#使用Dockerfile构建镜像
+docker build --no-cache -t test:pandas .
+
+#检查镜像配置
+docker inspect test:pandas
+
+# 运行容器，并传入参数12
+docker run -it --rm test:pandas 12
+
+```
+
+### 最终成功输出：
+```bash
+arguments ['pipeline.py', '12']
+
+hello pipeline,month
+
+   day  num_passengers  month
+0    1               3     12
+1    2               4     12
+
+hello pipeline,month= 12
+```
+
+### 本次练习完成了什么？
+``` text
+本地 Python 项目
+        ↓
+Dockerfile 定义 Python 3.13.11 环境
+        ↓
+复制 uv 工具
+        ↓
+复制 pyproject.toml、uv.lock、.python-version
+        ↓
+uv sync --locked 安装依赖
+        ↓
+复制 pipeline.py
+        ↓
+构建 Docker Image: test:pandas
+        ↓
+docker run test:pandas 12
+        ↓
+容器内部执行 uv run python pipeline.py 12
+        ↓
+成功运行 pipeline
+```
+
+这次练习重点是：
+1. Dockerfile用来定义可复现的运行环境
+2. uv用来管理 Python依赖和虚拟环境
+3. `uv.lock` 保证依赖版本固定
+4. `ENTRYPOINT` 定义容器启动时默认执行的命令
+5. `docker run test:pandas 12` 中的`12` 会作为参数传给`pipeline.py`
+6. 最终实现了一个可容器化运行的python data pipeline
 
 
 
