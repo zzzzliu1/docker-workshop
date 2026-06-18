@@ -508,6 +508,257 @@ df.shape
 - Parquet 文件内部包含 schema，所以 Parquet 能保存字段类型信息。
 
 
+7. Jupter: 指定字段类型和时间字段
+
+为了避免CSV 中字段类型混乱， 可以显示指定dtype：
+
+``` bash
+dtype = {
+    "VendorID": "Int64",
+    "passenger_count": "Int64",
+    "trip_distance": "float64",
+    "RatecodeID": "Int64",
+    "store_and_fwd_flag": "string",
+    "PULocationID": "Int64",
+    "DOLocationID": "Int64",
+    "payment_type": "Int64",
+    "fare_amount": "float64",
+    "extra": "float64",
+    "mta_tax": "float64",
+    "tip_amount": "float64",
+    "tolls_amount": "float64",
+    "improvement_surcharge": "float64",
+    "total_amount": "float64",
+    "congestion_surcharge": "float64"
+}
+
+parse_dates = [
+    "tpep_pickup_datetime",
+    "tpep_dropoff_datetime"
+]
+```
+
+重新读取数据：
+```bash
+df = pd.read_csv(
+    url,
+    nrows=100,
+    dtype=dtype,
+    parse_dates=parse_dates
+)
+
+df.head()
+```
+
+8. Jupter: 创建PostgreSQL连接
+```bash
+from sqlalchemy import create_engine
+```
+
+创建数据库连接： 
+``` bash
+engine = create_engine(
+    "postgresql+psycopg://root:root@localhost:5432/ny_taxi"
+)
+```
+
+说明：
+``` text
+root:root        用户名和密码
+localhost:5432   PostgreSQL 地址和端口
+ny_taxi          数据库名称
+```
+
+9. Jupter: 生成SQL 建表语句
+
+```bash
+print(pd.io.sql.get_schema(df, name="yellow_taxi_data", con=engine))
+```
+
+作用：
+```
+根据 pandas DataFrame 的字段和类型，生成 PostgreSQL 建表语句。
+```
+
+10. Jupter: 创建yellow_taxi_data表
+```
+df.head(n=0).to_sql(
+    name="yellow_taxi_data",
+    con=engine,
+    if_exists="replace",
+    index=False
+)
+```
+
+说明：
+``` text
+df.head(n=0)      只保留表结构，不写入数据
+to_sql            将 DataFrame 写入 PostgreSQL
+if_exists=replace 如果表已存在，就替换
+index=False       不把 pandas index 写入数据库
+```
+
+这一步只创建表：
+yellow_taxi_data
+还没有真正插入完整数据。
+
+
+11. Jupyter：分块读取 CSV 并写入 PostgreSQL
+
+完整数据比较大，所以使用 chunksize 分批读取：
+``` bash
+df_iter = pd.read_csv(
+    url,
+    iterator=True,
+    chunksize=100000,
+    dtype=dtype,
+    parse_dates=parse_dates
+)
+```
+
+先读取第一块数据：
+```bash
+df = next(df_iter)
+df.shape
+```
+
+创建表并写入第一批数据：
+```
+df.head(n=0).to_sql(
+    name="yellow_taxi_data",
+    con=engine,
+    if_exists="replace",
+    index=False
+)
+
+df.to_sql(
+    name="yellow_taxi_data",
+    con=engine,
+    if_exists="append",
+    index=False
+)
+```
+
+继续写入剩余数据：
+``` bash
+from time import time
+
+while True:
+    try:
+        t_start = time()
+
+        df = next(df_iter)
+
+        df.to_sql(
+            name="yellow_taxi_data",
+            con=engine,
+            if_exists="append",
+            index=False
+        )
+
+        t_end = time()
+
+        print(f"Inserted another chunk, took {t_end - t_start:.3f} seconds")
+
+    except StopIteration:
+        print("Finished ingesting data into PostgreSQL")
+        break
+
+```
+
+说明： 
+```text
+iterator=True      开启迭代读取
+chunksize=100000   每次读取 100000 行
+to_sql append      每次把一个 chunk 追加写入 PostgreSQL
+StopIteration      表示 CSV 已经读取完毕
+```
+
+12. Terminal：用 pgcli 验证数据表是否创建成功
+
+回到 terminal，连接数据库：
+```bash
+uv run pgcli -h localhost -p 5432 -u root -d ny_taxi
+```
+
+输入密码：
+root
+
+查看数据库表：
+\dt
+
+成功后应该看到：
+``` bash
+public | test             | table | root
+public | yellow_taxi_data | table | root
+```
+
+查询数据：
+``` bash
+SELECT COUNT(*) FROM yellow_taxi_data;
+```
+
+查看前5行：
+``` bash
+SELECT * FROM yellow_taxi_data LIMIT 5;
+```
+
+退出：
+``` bash
+\q
+```
+
+本章完成了一个完整的数据工程Ingestion workflow：
+``` text
+NYC Taxi CSV 数据源
+        ↓
+Jupyter Notebook
+        ↓
+pandas read_csv
+        ↓
+dtype + parse_dates 数据类型处理
+        ↓
+SQLAlchemy create_engine
+        ↓
+PostgreSQL Docker container
+        ↓
+to_sql 创建表
+        ↓
+chunksize 分批写入数据
+        ↓
+pgcli 验证数据库表
+```
+
+核心命令总结： 
+``` text
+# 启动 PostgreSQL
+docker run -it --rm \
+  -e POSTGRES_USER="root" \
+  -e POSTGRES_PASSWORD="root" \
+  -e POSTGRES_DB="ny_taxi" \
+  -v ny_taxi_postgres_data:/var/lib/postgresql \
+  -p 5432:5432 \
+  postgres:18
+
+# 进入项目
+cd /workspaces/docker-workshop/pipeline
+
+# 安装依赖
+uv add --dev pgcli
+uv add --dev jupyter
+uv add sqlalchemy "psycopg[binary,pool]"
+
+# 启动 Jupyter
+uv run jupyter notebook
+
+# 连接 PostgreSQL
+uv run pgcli -h localhost -p 5432 -u root -d ny_taxi
+```
+
+
+
+
+
 
 
 
