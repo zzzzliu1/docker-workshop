@@ -299,9 +299,9 @@ SELECT * FROM test;
 ```
 
 最终验证：
-Docker PostgreSQL 容器正在运行
-pgcli 可以成功连接数据库
-SQL 可以正常创建表、插入数据、查询数据
+* Docker PostgreSQL 容器正在运行
+* pgcli 可以成功连接数据库
+* SQL 可以正常创建表、插入数据、查询数据
 
 
 
