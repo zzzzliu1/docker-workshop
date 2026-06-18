@@ -235,7 +235,7 @@ ls -a
 
 ```bash
 # 1. 进入pipeline项目目录
-cd/workspaces/docker-workshop/pipeline
+cd /workspaces/docker-workshop/pipeline
 
 
 # 2.激活当前项目的python虚拟环境
@@ -302,6 +302,213 @@ SELECT * FROM test;
 * Docker PostgreSQL 容器正在运行
 * pgcli 可以成功连接数据库
 * SQL 可以正常创建表、插入数据、查询数据
+
+
+# ==========================================
+# Get the CSV data with the NewYork taxi trips dataset and put this inside Postgres
+# ==========================================
+
+
+<img width="2560" height="1540" alt="image" src="https://github.com/user-attachments/assets/940c3aa8-cb01-43e7-b139-3a90ded8fbbf" />
+
+<img width="2456" height="1130" alt="image" src="https://github.com/user-attachments/assets/451f6bff-232f-45d2-9d25-c233583694a2" />
+
+
+
+# csv is schemaless. Parquet already contains a schema inside the Parquet files. so in Parquet files, you know the types
+
+
+
+# ==========================================
+# Ingesting Data into Postgres
+# ==========================================
+
+
+In the Jupter notebook, we create code to :
+1. Download the CSV file
+2. Read it in chunks with pandas
+3. Convert datetime columns
+4. Insert data into PostgreSQL using SQLAlchemy
+
+
+Database Created:
+<img width="2560" height="1540" alt="image" src="https://github.com/user-attachments/assets/19f79319-d54a-4f94-86c1-6810c6ef8dfc" />
+
+
+# ==========================================
+# 整体总结： Docker+Jupyter+PostgreSQL： Ingest NYC Taxi CSV Data into Postgres
+# ==========================================
+
+```text
+启动 PostgreSQL Docker 容器
+        ↓
+用pgcli验证数据库连接
+        ↓
+安装并启动Jupter Notebook
+        ↓
+在Jupter 中读取NYC Taxi CSV 数据
+        ↓
+用pandas 检查数据结构和字段类型
+        ↓
+用SQLAlchemy连接PostgreSQL
+        ↓
+创建yellow_taxi_data 表
+        ↓
+将CSV 数据导入PostgreSQL
+        ↓
+用pgcli验证表是否创建成功
+```
+
+
+1. Terminal: 启动PostgreSQL 容器
+在一个单独的terminal中运行，并保持这个terminal不要关闭：
+
+```bash
+# 启动 PostgreSQL 18 容器
+docker run -it --rm \
+  -e POSTGRES_USER="root" \
+  -e POSTGRES_PASSWORD="root" \
+  -e POSTGRES_DB="ny_taxi" \
+  -v ny_taxi_postgres_data:/var/lib/postgresql \
+  -p 5432:5432 \
+  postgres:18
+```
+
+说明：
+``` text
+POSTGRES_USER="root"       创建数据库用户 root
+POSTGRES_PASSWORD="root"   设置密码 root
+POSTGRES_DB="ny_taxi"      创建数据库 ny_taxi
+-v ny_taxi_postgres_data   使用 Docker volume 保存数据库数据
+-p 5432:5432               将容器 5432 端口映射到本机 5432
+postgres:18                使用 PostgreSQL 18 镜像
+```
+
+看到类似下面内容表示数据库启动成功：
+``` text
+database system is ready to accept connections
+```
+
+
+2. Terminal: 进入pipeline项目目录
+在另一个terminal中运行：
+``` bash
+#进入pipeline项目目录
+cd/ workspaces/docker-workshop/pipeline
+
+#查看当前目录文件
+ls
+```
+
+应该能看到：
+``` text
+Dockerfile
+main.py
+notebook.ipynb
+pipeline.py
+pyproject.toml
+README.md
+uv.lock
+```
+
+
+3. Terminal: 安装pgcli、jupter、SQLAlchemy相关依赖
+
+```bash
+# 安装PostgreSQL 命令行客户端
+uv add --dev pgcli
+
+# 安装Jupter Notebook
+uv add --dev jupyter
+
+# 安装SQLAlchemy 和 PostgreSQL driver
+uv add sqlalchemy "psycopg[binary,pool]"
+
+说明：
+```text
+pgcli       用来在 terminal 中连接 PostgreSQL
+jupyter     用来打开 notebook.ipynb
+sqlalchemy  用 Python 连接数据库
+psycopg     PostgreSQL Python driver
+```
+
+4. Terminal: 用pgcli连接PostgreSQL
+
+```bash
+# 连接 PostgreSQL 数据库
+uv run pgcli -h localhost -p 5432 -u root -d ny_taxi
+```
+
+输入密码：
+root
+成功后会进入：
+```
+root@localhost:ny_taxi>
+```
+
+查看当前数据库中的表：
+```bash
+\dt
+```
+退出 pgcli：
+```bash
+\q
+```
+
+
+5. Terminal: 启动Jupter Notebook
+
+``` bash
+# 在pipeline目录启动 Jupter
+uv run jupter notebook
+```
+浏览器会打开 Jupyter 页面：
+```
+http://127.0.0.1:8888/tree
+```
+
+然后新建或打开：
+```
+notebook.ipynb
+```
+
+6. Jupter 读取NYC Taxi CSV 数据
+在Jupter Notebook中运行：
+```python
+import pandas as pd
+```
+
+定义数据源地址：
+``` bash
+prefix = "https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow/"
+url = prefix + "yellow_tripdata_2021-01.csv.gz"
+url
+```
+
+读取前100行数据做测试：
+``` bash
+df = pd.read_csv(url, nrows=100)
+df.head()
+```
+
+查看字段类型：
+``` bash
+df.dtypes
+```
+
+查看数据规模：
+```bash
+
+df.shape
+```
+
+说明：
+- nrows=100 表示只读取前 100 行，用于快速测试。
+- CSV 是 schemaless 的，也就是 CSV 本身不保存字段类型。
+- Parquet 文件内部包含 schema，所以 Parquet 能保存字段类型信息。
+
+
+
 
 
 
