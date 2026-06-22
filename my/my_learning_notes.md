@@ -756,6 +756,446 @@ uv run pgcli -h localhost -p 5432 -u root -d ny_taxi
 ```
 
 
+#### 插曲：与之前PostgreSQL容器断开连接之后需要重新启动两个任务
+1. PostgreSQL容器
+2. Jupter Notebook
+
+建议用两个Terminal分别跑：
+
+一、Terminal1: 重新启动PostgreSQL容器
+``` bash
+docker run -it --rm \
+  -e POSTGRES_USER="root" \
+  -e POSTGRES_PASSWORD="root" \
+  -e POSTGRES_DB="ny_taxi" \
+  -v ny_taxi_postgres_data:/var/lib/postgresql \
+  -p 5432:5432 \
+  postgres:18
+```
+保持这个terminal不要关。
+
+二、Terminal2: 重新启动Jupter
+```bash
+cd /workspaces/docker-workshop/pipeline
+
+uv run jupyter notebook --ip=0.0.0.0 --port=8888
+```
+然后重新打开浏览器里的Jupter地址：
+```
+http://127.0.0.1:8888
+```
+
+打开：
+```
+notebook.ipynb
+```
+
+三、Terminal3: 验证PostgreSQL 是否连接成功
+```bash
+cd /workspaces/docker-workshop/pipeline
+
+uv run pgcli -h localhost -p 5432 -u root -d ny_taxi
+```
+
+密码输入：
+root
+
+进入后执行：
+``` sql
+\dt
+```
+
+应该能看到之前的表：
+``` bash
+test
+yellow_taxi_data
+```
+
+# 总结Chpater6- Ingesting NYC Taxi data into PostgreSQL
+
+
+<img width="2560" height="1540" alt="image" src="https://github.com/user-attachments/assets/ee9b0d00-566d-4eda-80c2-14e43800ec59" />
+
+<img width="2560" height="1540" alt="image" src="https://github.com/user-attachments/assets/0777b734-13be-47b0-9e9b-d25d1e70e2b0" />
+
+
+整体流程图：
+``` text
+NYC Taxi CSV (.csv.gz)
+          ↓
+      Pandas
+          ↓
+   Data Cleaning
+          ↓
+ SQLAlchemy Engine
+          ↓
+ PostgreSQL Container
+          ↓
+ yellow_taxi_data
+```
+
+目标： 把NYC Taxi CSV 文件导入PostgreSQL 数据库
+
+Step1: 创建Jupter 环境
+Terminal：
+进入项目：
+``` bash
+cd /workspaces/docker-workshop/pipeline
+```
+
+安装Jupter:
+``` bash
+uv add --dev jupyter
+```
+
+启动Notebook：
+```bash
+uv run jupyter notebook
+```
+作用：
+启动notebook环境用于数据探索
+
+
+Step2: 导入Pandas
+Jupter
+```
+import pandas as pd
+```
+
+作用： 使用pandas 读取和处理数据
+
+Step3: 下载NYC Taxi数据
+Jupter:
+``` python
+prefix = "https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow"
+
+url = f"{prefix}/yellow_tripdata_2021-01.csv.gz"
+```
+
+作用：构造NYC Taxi CSV 下载地址
+
+Step4: 读取数据
+``` python
+
+df= pd.read_csv(url)
+```
+作用：把CSV加载到DataFrame
+
+查看数据：
+```python
+df.head()
+```
+
+查看结构：
+df.shape
+
+查看类型：
+df.dtypes
+
+
+Step6: 处理DtypeWarning
+问题：
+读取大CSV时：
+```bash
+pd.read_csv(url)
+```
+可能报：
+DtypeWarning:
+Columns have mixed types
+
+原因：
+同一列中存在不同数据类型
+
+解决方案：
+显式指定类型：
+```text
+dtype = {
+    "VendorID": "Int64",
+    "passenger_count": "Int64",
+    "trip_distance": "float64",
+    "RatecodeID": "Int64",
+    "store_and_fwd_flag": "string",
+    "PULocationID": "Int64",
+    "DOLocationID": "Int64",
+    "payment_type": "Int64",
+    "fare_amount": "float64",
+    "extra": "float64",
+    "mta_tax": "float64",
+    "tip_amount": "float64",
+    "tolls_amount": "float64",
+    "improvement_surcharge": "float64",
+    "total_amount": "float64",
+    "congestion_surcharge": "float64"
+}
+```
+
+Step7: 解析时间字段
+Jupter：
+``` python
+parse_dates = [
+    "tpep_pickup_datetime",
+    "tpep_dropoff_datetime"
+]
+```
+
+作用：
+字符串
+↓
+datetime
+
+Step 8 创建 PostgreSQL 容器
+TErminal：
+```bash
+docker run -it \
+-e POSTGRES_USER=root \
+-e POSTGRES_PASSWORD=root \
+-e POSTGRES_DB=ny_taxi \
+-v ny_taxi_postgres_data:/var/lib/postgresql \
+-p 5432:5432 \
+postgres:18
+```
+
+作用：启动PostgreSQL 数据库
+```text
+参数：
+参数	作用
+POSTGRES_USER	root
+POSTGRES_PASSWORD	root
+POSTGRES_DB	ny_taxi
+-p 5432:5432	暴露数据库端口
+-v	持久化数据库
+
+```
+
+Step9: 安装PostgreSQL Driver
+Terminal：
+```bash
+uv add sqlalchemy "psycopg[binary,pool]"
+```
+
+作用：
+```text
+Pandas
+↓
+SQLAlchemy
+↓
+PostgreSQL
+
+```
+
+Step 10: 创建数据库连接
+Jupter
+``` python
+from sqlalchemy import create_engine
+```
+
+创建engineer：
+``` python
+engine = create_engine(
+    "postgresql+psycopg://root:root@localhost:5432/ny_taxi"
+)
+```
+
+作用：连接PostgreSQL
+
+
+Step11:查看生成的SQL
+Jupter
+```python
+print(
+    pd.io.sql.get_schema(
+        df,
+        name="yellow_taxi_data",
+        con=engine
+    )
+)
+
+```
+
+作用：查看pandas 推断出的建表SQL
+生成：
+```bash
+CREATE TABLE yellow_taxi_data (...)
+```
+
+Step12: 创建表结构
+Jupter
+```python
+df.head(0).to_sql(
+    name="yellow_taxi_data",
+    con=engine,
+    if_exists="replace"
+)
+```
+
+作用：
+只创建表
+不插入数据
+
+为什么用head(0)?  
+返回： 0 rows 全部columns
+因此： 得到Schema 不写数据
+
+
+Step13: Chunk Reading
+大文件：1.3 million rows 不能一次全部读入内存
+创建Iterator
+``` python
+df_iter = pd.read_csv(
+    url,
+    dtype=dtype,
+    parse_dates=parse_dates,
+    iterator=True,
+    chunksize=100000
+)
+```
+作用： 每次读取100000行
+
+Step14: 测试Iterator
+
+```python
+for df_chunk in df_iter:
+    print(len(df_chunk))
+```
+输出：
+100000
+100000
+100000
+。。。
+
+说明： CSV被拆成多个批次
+
+
+Step15:插入一个 Chunk
+``` python
+df_chunk.to_sql(
+    name="yellow_taxi_data",
+    con=engine,
+    if_exists="append"
+)
+```
+作用： 追加写入数据库
+
+
+Step16: 完整Ingestion
+```python
+first = True
+
+for df_chunk in df_iter:
+
+    if first:
+
+        df_chunk.head(0).to_sql(
+            name="yellow_taxi_data",
+            con=engine,
+            if_exists="replace"
+        )
+
+        first = False
+
+    df_chunk.to_sql(
+        name="yellow_taxi_data",
+        con=engine,
+        if_exists="append"
+    )
+
+    print(len(df_chunk))
+
+```
+
+流程：
+```text
+第一批：
+    创建表
+
+后续批次：
+    插入数据
+```
+
+
+Step18: 添加进度条
+Terminal
+```bash
+uv add tqdm
+```
+
+Jupter:
+```python
+from tqdm.auto import tqdm
+```
+创建Iterator
+```python
+for df_chunk in tqdm(df_iter):
+
+    df_chunk.to_sql(
+        name="yellow_taxi_data",
+        con=engine,
+        if_exists="append"
+    )
+```
+
+Step19: 创建数据
+Terminal
+连接PostgreSQL
+```
+uv run pgcli \
+-h localhost \
+-p 5432 \
+-u root \
+-d ny_taxi
+```
+
+输入密码：root
+查看表：\dt
+结果：
+test
+yellow_taxi_data
+
+Step20: 验证数据量
+``` sql
+SELECT count(1)
+FROM yellow_taxi_data;
+```
+
+核心知识点：
+```text
+1. Docker 运行 PostgreSQL
+
+2. Jupyter 数据探索
+
+3. Pandas CSV 读取
+
+4. dtype 指定
+
+5. datetime 转换
+
+6. SQLAlchemy Engine
+
+7. DataFrame → SQL
+
+8. head(0) 建表
+
+9. chunk ingestion
+
+10. tqdm 进度监控
+
+11. pgcli 数据验证
+
+12. PostgreSQL 数据仓库存储
+```
+
+
+
+
+
+
+
+<img width="2496" height="1472" alt="image" src="https://github.com/user-attachments/assets/48b0e3be-eb2d-4632-bc19-8ae6406b280b" />
+
+
+
+
+
 
 
 
