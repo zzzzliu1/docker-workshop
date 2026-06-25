@@ -2193,13 +2193,1204 @@ pg-network
 
 
 
+# ==========================================
+# 下面加入了Docker compose的内容：Docker+PostgreSQL+Ingestion+PgAdmin+Docker Compose
+# ==========================================
+
+
+完成一个完整的数据工程开发环境：
+``` text
+                Docker Compose
+                      │
+        ┌─────────────┴─────────────┐
+        │                           │
+   PostgreSQL                  pgAdmin
+        │                           │
+        └─────────────┬─────────────┘
+                      │
+              Docker Network
+                      │
+              taxi_ingest:v001
+                      │
+              ingest_data.py
+                      │
+             NYC Taxi Dataset
+                      │
+              PostgreSQL Tables
+```
+
+最终实现：
+✅ PostgreSQL 数据库运行在Docker中
+✅ pgAdmin图形化管理数据库
+✅ Ingest_data.py 将Taxi data 导入PostgreSQL
+✅ 所有容器交给Docker Compose 管理
 
 
 
+二、整个流程梳理
+Step 1 建立 ingestion Docker Image
+
+首先修改 Dockerfile。
+
+之前：
+```
+COPY pipeline.py .
+ENTRYPOINT ["python","pipeline.py"]
+```
+现在改成：
+```
+COPY ingest_data.py .
+
+ENTRYPOINT ["python","ingest_data.py"]
+```
+
+为什么？
+之前Docker Image的用途是：
+```  text
+运行 pipeline.py
+```
+
+现在新的image的变成：
+``` text
+读取Parquet
+↓
+连接PostgreSQL
+↓
+写入数据库
+
+```
+所以入口程序必须变成： ingest_data.py
+
+然后重新Build：
+```
+docker build -t taxi_ingest:v001 .
+```
+
+目的：把最新版本程序打包成新的Docker Image。生成taxi_ingest:v001
+
+Step 2 第一次启动PostgreSQL Container
+运行：
+```bash
+docker run -it --rm \
+-e POSTGRES_USER=root \
+-e POSTGRES_PASSWORD=root \
+-e POSTGRES_DB=ny_taxi \
+-v ny_taxi_postgres_data:/var/lib/postgresql \
+-p 5432:5432 \
+postgres:18
+```
+
+作用：启动PostgreSQL
+配置：
+```
+数据库：
+
+ny_taxi
+
+用户名：
+
+root
+
+密码：
+
+root
+```
+
+并且：
+```
+5432
+
+映射
+
+localhost:5432
+```
+
+这样本机就可以连接数据库。
+
+
+Volume: 
+```
+ny_taxi_postgres_data
+```
+用于永久保存数据库。 
+否则Container 删除以后： 所有数据都会消失。
 
 
 
+Step 3 本地运行 ingest_data.py
 
+先测试：
+```bash
+uv run python ingest_data.py
+```
+确认整个流程正常：
+```text
+确认：
+
+Python
+
+↓
+
+SQLAlchemy
+
+↓
+
+Pandas
+
+↓
+
+PostgreSQL
+
+整个流程正常。
+
+```
+
+Step 4 Container 运行 ingest_data.py
+Build 完 Image后：
+运行：
+``` bash
+docker run -it --rm \
+taxi_ingest:v001 \
+...
+```
+
+目的： 让整个ingestion不依赖本地python。而是在Docker Container里面运行
+
+Step 5 Docker Network
+因为老师开始发现了一个问题时说：Postgre和taxi_ingest属于两个Container。两个Container默认：互相找不到。
+于是创建Network：
+```bash
+docker network create pg-network
+```
+作用：创建一个专门的局域网 pg-network
+以后：
+```
+Postgres
+
+↓
+
+pgAdmin
+
+↓
+
+Ingestion
+```
+全部加入这个network。这样： Container 就可以互相通信。
+
+Step 6 PostgreSQL Container 加入 Network
+启动：PostgreSQL：
+``` bash
+--network=pg-network
+
+--name=pgdatabase
+```
+这里：pgdatabase不是数据库名字。而是Container的名字
+
+以后其他Container不用写：localhost
+直接： pgdatabse
+docker会自动解析。
+例如：pg_host=pgdatabse
+
+Step 7 运行 taxi_ingest
+运行：
+```bash
+docker run -it --rm \
+--network=pg-network \
+taxi_ingest:v001 \
+--pg-host=pgdatabase
+```
+
+这里：
+老师故意把 localhost 改成pgdatabase
+原因是：Container之间不能使用localhost。
+必须使用：Container Name
+作为Host。
+这是Docker Networking 最重要知识点之一。
+
+Step 8 安装 pgAdmin
+继续运行
+```
+docker run -it \
+-e PGADMIN_DEFAULT_EMAIL=admin@admin.com \
+-e PGADMIN_DEFAULT_PASSWORD=root \
+-v pgadmin_data:/var/lib/pgadmin \
+-p 8085:80 \
+--network=pg-network \
+--name pgadmin \
+dpage/pgadmin4
+```
+
+作用：
+启动pgAdmin图形化数据库管理工具。以后浏览器访问：
+```bash
+http://localhost:8085
+```
+即可管理PostgreSQL
+
+Step 9 在 pgAdmin 注册 Server
+第一次连接：
+```text
+Host：
+
+pgdatabase
+
+Port：
+
+5432
+
+Database：
+
+ny_taxi
+
+User：
+
+root
+
+Password：
+
+root
+```
+<img width="676" height="396" alt="image" src="https://github.com/user-attachments/assets/403d8782-7428-4e28-bbec-5d8b41b5ae1a" />
+
+Step 10 查询数据库
+成功后：
+运行：
+```
+select count(*) from yellow_taxi_trips_2021_1;
+```
+结果： 1369765
+
+说明： Taxi Data 成功导入PostgreSQL
+
+继续：
+```sql
+select * from yellow_taxi_trips_2021_1;
+```
+可以查看：所有Taxi Records。
+
+Step 11 为什么老师开始使用 Docker Compose？
+老师说： 我不想每次都启动三个Container。
+之前：
+每次需要：
+```
+docker run postgres
+docker run pgadmin
+docker run taxi_ingest
+```
+非常麻烦。
+所以希望：一个命令启动整个环境。
+于是：开始学习Docker Compose。
+
+Step 12 创建 docker-compose.yaml
+新增：
+```
+docker-compose.yaml
+```
+
+文件内容yaml
+```
+services:
+  pgdatabase:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: ny_taxi
+    volumes:
+      - ny_taxi_postgres_data:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: root
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "8085:80"
+
+volumes:
+  ny_taxi_postgres_data:
+  pgadmin_data:
+```
+以后：
+所有
+```text
+Postgres
+
+pgAdmin
+
+Network
+
+Volume
+```
+全部写进去。
+Docker Compose：负责统一管理。
+
+Step 13 Docker Compose 自动创建 Network
+老师查看：
+```
+docker network ls
+```
+可以看到：pipeline_default 自动生成。
+以后Container都会加入：pipeline_default
+
+Step 14 Docker Compose 环境重新启动
+老师重新：
+```
+docker compose up
+```
+之后；重新打开 pgAdmin
+需要重新Register Servier
+```text
+因为：
+之前：
+
+Server Connection：
+
+存在旧的 pgAdmin Volume。
+
+现在：
+
+Docker Compose：
+
+创建的是：
+
+新的 pgAdmin Container。
+
+所以：
+
+第一次：
+
+仍需要：
+
+Register Server。
+```
+
+Step 15 再次运行 Ingestion
+虽然：PostgreSQL 已经启动。
+但是：数据库里面：还没有 Table。
+所以：再次运行：
+``` bash
+docker run -it --rm \
+--network=pipeline_default \
+taxi_ingest:v001 \
+...
+```
+重新执行：ingest_data.py
+目的： 重新导入Taxi data。
+导入完成以后； pgAdmin
+立即出现：yellow_taxi_trips_2021_1
+随后验证：
+```
+select count(*) from yellow_taxi_trips_2021_1;
+```
+结果：1369765.
+说明：整个Docker Compose 环境运行成功。
+
+三、 今天最重要的理解
+整个架构可以理解成：
+```
+                    Docker Compose
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+   PostgreSQL          pgAdmin         taxi_ingest
+        │                  │                  │
+        └──────────────────┴──────────────────┘
+                   pipeline_default Network
+                           │
+                      Docker Volume
+                           │
+                      Persistent Data
+```
+
+每个组件职责明确：
+
+PostgreSQL：负责存储数据。
+pgAdmin：负责可视化管理数据库。
+taxi_ingest：负责将原始数据导入数据库。
+Docker Network：负责容器之间的通信。
+Docker Volume：负责数据持久化。
+Docker Compose：负责统一编排和启动整个数据工程环境。
+
+四、今日最重要的知识点：
+1. Docker Image 与 Container的区别：
+   - Image是模版
+   - Container 是运行中的实例
+  
+2. Docker Network
+   - 容器之间不能依赖`localhost` 通信
+   - 应使用Container Name 如（pgdatabase）作为主机名
+  
+3. Docker Volume
+   - 保存数据库和pgAdmin配置
+   - 即使删除容器，数据仍然保留
+  
+4. pgAdmin的作用
+   - 提供PostgreSQL的web图形管理界面
+   - 可执行SQL、查看表、浏览数据
+  
+5. Docker Compose 的核心价值
+   - 用一个`docker-compose.yaml`文件描述整个系统
+   - 用一条命令可启动完整的数据工程环境，而无需逐个运行容器
+_______________________________________________________________________________________
+1. 项目目录结构
+主要工作目录：
+```bash
+cd /workspaces/docker-workshop/pipeline
+```
+目录中的主要文件：
+```
+pipeline/
+├── Dockerfile
+├── docker-compose.yaml
+├── ingest_data.py
+├── pyproject.toml
+├── uv.lock
+├── .python-version
+├── notebook.ipynb
+├── README.md
+└── output_12.parquet
+```
+
+2. Dockerfile: 构建ingestion镜像
+文件位置：
+```
+/workspaces/docker-workshop/pipeline/Dockerfile
+```
+Dockerfile 内容：
+``` dockerfile
+FROM python:3.13.11-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+
+WORKDIR /code
+
+ENV PATH="/code/.venv/bin:$PATH"
+
+COPY pyproject.toml .python-version uv.lock ./
+
+RUN uv sync --locked
+
+COPY ingest_data.py .
+
+ENTRYPOINT ["python", "ingest_data.py"]
+```
+
+每一步作用：
+```
+FROM python:3.13.11-slim
+```
+使用python3.13.11 的轻量级基础镜像
+```
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+```
+从uv官方镜像中复制uv工具到当前镜像
+```
+WORKDIR /code
+```
+设置容器内部工作目录为 `/code`
+
+```dockerfile
+ENV PATH="/code/.venv/bin:$PATH"
+```
+把uv创建的虚拟环境加入PATH，确保容器运行时能找到已安装依赖。
+``` dockerfile
+COPY pyproject.toml .python-version uv.lock ./
+```
+复制项目以来配置文件到容器
+```dockerfile
+RUN uv sync --locked
+```
+根据`uv.lock` 安装完全锁定版本的依赖
+``` dockerfile
+COPY  ingest_data.py
+```
+
+把数据导入脚本复制进容器
+```dockerfile
+ENTRYPOINT ["python", "ingest_data.py"]
+```
+容器启动时默认执行：
+```
+python ingest_data.py
+```
+
+3. 构建taxi_ingest Docker Image
+运行位置：Terminal，必须在：
+```bash
+cd /workspaces/docker-workshop/pipeline
+```
+代码：
+```bash
+docker build -t taxi_ingest:v001 .
+```
+
+作用：
+把当前目录中的：
+```
+Dockerfile
+ingest_data.py
+pyproject.toml
+uv.lock
+.python-version
+```
+打包成Docker Image：
+```
+taxi_ingest:v001
+```
+
+理解：
+这个镜像的职责是：
+```
+Dockerfile
+ingest_data.py
+pyproject.toml
+uv.lock
+.python-version
+```
+
+4. ingest_data.py：数据导入脚本
+文件位置：
+```
+/workspaces/docker-workshop/pipeline/ingest_data.py
+```
+核心代码：
+```python
+import pandas as pd
+from sqlalchemy import create_engine
+from tqdm.auto import tqdm
+import click
+```
+作用：
+pandas 负责读取csv和写入数据库； sqlalchemy 负责创建PostgreSQL连接
+tqdm负责显示进度条； click负责接收命令行参数
+
+
+## dtype和parse_dates
+```python
+dtype = {
+    "VendorID": "Int64",
+    "passenger_count": "Int64",
+    "trip_distance": "float64",
+    "RatecodeID": "Int64",
+    "store_and_fwd_flag": "string",
+    "PULocationID": "Int64",
+    "DOLocationID": "Int64",
+    "payment_type": "Int64",
+    "fare_amount": "float64",
+    "extra": "float64",
+    "mta_tax": "float64",
+    "tip_amount": "float64",
+    "tolls_amount": "float64",
+    "improvement_surcharge": "float64",
+    "total_amount": "float64",
+    "congestion_surcharge": "float64"
+}
+
+parse_dates = [
+    "tpep_pickup_datetime",
+    "tpep_dropoff_datetime"
+]
+```
+
+作用：csv文件本身没有schema，因此需要手动指定字段类型。
+尤其时间字段：
+```
+tpep_pickup_datetime
+tpep_dropoff_datetime
+```
+需要解析为datetime类型。
+
+## Click参数
+``` python
+@click.command()
+@click.option("--pg-user", default="root", show_default=True)
+@click.option("--pg-pass", default="root", show_default=True)
+@click.option("--pg-host", default="localhost", show_default=True)
+@click.option("--pg-port", default=5432, type=int, show_default=True)
+@click.option("--pg-db", default="ny_taxi", show_default=True)
+@click.option("--year", default=2021, type=int, show_default=True)
+@click.option("--month", default=1, type=int, show_default=True)
+@click.option("--target-table", default="yellow_taxi_data", show_default=True)
+@click.option("--chunksize", default=100000, type=int, show_default=True)
+def run(pg_user, pg_pass, pg_host, pg_port, pg_db, year, month, target_table, chunksize):
+```
+作用：
+让脚本可以从terminal接收参数，例如
+``` bash
+--pg-user=root
+--pg-host=pgdatabase
+--target-table=yellow_taxi_trips_2021_1
+```
+这样同一个脚本可以复用，不需要每次手动改python代码。
+
+## 构造url
+```python
+prefix = "https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow"
+url = f"{prefix}/yellow_tripdata_{year}-{month:02d}.csv.gz"
+```
+
+## 创建数据库连接
+```python
+engine = create_engine(
+    f"postgresql+psycopg://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
+)
+```
+
+作用：
+连接PostgreSQL 数据库
+例如在Docker Compose 网络中：
+```bash
+pg_user = root
+pg_pass = root
+pg_host = pgdatabase
+pg_port = 5432
+pg_db = ny_taxi
+```
+最终连接字符串是：
+```bash
+postgresql+psycopg://root:root@pgdatabase:5432/ny_taxi
+```
+
+## 分别读取CSV
+```python
+df_iter = pd.read_csv(
+    url,
+    dtype=dtype,
+    parse_dates=parse_dates,
+    iterator=True,
+    chunksize=chunksize,
+)
+```
+
+作用：不要一次性读取完整CSV，而是每次读取一块。
+例如：
+```bash
+--chunksize=100000
+```
+代表每次读取100000行。
+
+
+## 分块写入 PostgreSQL
+```python
+first = True
+
+for df_chunk in tqdm(df_iter):
+    if first:
+        df_chunk.head(0).to_sql(
+            name=target_table,
+            con=engine,
+            if_exists="replace",
+            index=False,
+        )
+
+        first = False
+
+    df_chunk.to_sql(
+        name=target_table,
+        con=engine,
+        if_exists="append",
+        index=False,
+    )
+
+```
+
+作用：第一次循环：
+df_chunk.head(0).to_sql(...)
+只创建表结构，不插入数据。
+之后：
+df_chunk.to_sql(...)
+不断追加数据。
+最终把完整csv写入PostgresQL
+
+
+5. 本地测试ingest_data.py
+运行位置：
+Terminal，pipeline目录：
+```bash
+cd /workspaces/docker-workshop/pipeline
+```
+代码：
+```bash
+uv run python ingest_data.py \
+  --pg-user=root \
+  --pg-pass=root \
+  --pg-host=localhost \
+  --pg-port=5432 \
+  --pg-db=ny_taxi \
+  --year=2021 \
+  --month=1 \
+  --target-table=yellow_taxi_trips_2021_1 \
+  --chunksize=100000
+```
+作用：在本地codespaces环境运行python脚本，把数据导入PostgresQL
+
+这里使用：
+```
+--pg-host=localhost
+```
+
+是因为python脚本是在宿主机环境中运行，而PostgreSQL通过：
+```
+-p 5432:5432
+```
+暴露到了宿主机。
+
+6. 手动启动PostgreSQL容器
+运行位置
+Terminal1
+
+代码：
+```bash
+docker run -it --rm \
+  -e POSTGRES_USER="root" \
+  -e POSTGRES_PASSWORD="root" \
+  -e POSTGRES_DB="ny_taxi" \
+  -v ny_taxi_postgres_data:/var/lib/postgresql \
+  -p 5432:5432 \
+  postgres:18
+```
+
+作用：启动PostgreSQL18 数据库容器。
+
+参数说明：
+```bash
+-e POSTGRES_USER="root"
+```
+
+设置数据库用户名
+```bash
+-e POSTGRES_USER="root"
+```
+设置数据库密码
+```
+-e POSTGRES_PASSWORD="root"
+```
+创建默认数据库
+```
+-v ny_taxi_postgres_data:/var/lib/postgresql
+```
+使用Docker Volume 保存数据库数据
+```bash
+-p 5432:5432
+```
+把PostgreSQL 容器映射到本地端口：
+```bash
+postgres:18
+```
+使用PostgreSQL18 镜像。
+
+
+7. 手动创建 Docker Network
+```bash
+docker network create pg-network
+```
+作用：创建一个Docker 内部网络，让多个容器可以通过容器名互相通信。
+
+查看Docker Network
+```bash
+docker network ls
+```
+可能看到：
+```
+bridge
+host
+none
+pg-network
+pipeline_default
+```
+
+8. 使用Docker Network启动PostgreSQL
+
+代码
+```bash
+docker run -it --rm \
+  --network=pg-network \
+  --name pgdatabase \
+  -e POSTGRES_USER="root" \
+  -e POSTGRES_PASSWORD="root" \
+  -e POSTGRES_DB="ny_taxi" \
+  -v ny_taxi_postgres_data:/var/lib/postgresql \
+  -p 5432:5432 \
+  postgres:18
+```
+
+作用：
+启动PostgreSQL容器，并加入：
+```
+pg-netowrk
+```
+容器名： pgdatabase
+以后其他容器可以通过
+```
+pgdatabase:5432
+```
+访问PostgreSQL。
+
+
+9. 在Docker Network中运行taxi_ingest容器
+```bash
+docker run -it --rm \
+  --network=pg-network \
+  taxi_ingest:v001 \
+  --pg-user=root \
+  --pg-pass=root \
+  --pg-host=pgdatabase \
+  --pg-port=5432 \
+  --pg-db=ny_taxi \
+  --target-table=yellow_taxi_trips_2021_1 \
+  --year=2021 \
+  --month=1 \
+  --chunksize=100000
+```
+作用：启动一个临时ingestion容器，把数据写入PostgreSQL。
+
+关键点：
+这里用：
+```bash
+--pg-host=pgdatabase
+```
+而不是：
+```
+--pg-host=localhost
+```
+原因：在容器内部
+localhost= 当前taxi_ingest 容器自己
+所以要用PostgreSQL 容器名：pgdatabase
+
+10. 手动启动pgAdmin容器
+
+代码：
+```bash
+docker run -it --rm \
+  -e PGADMIN_DEFAULT_EMAIL="admin@admin.com" \
+  -e PGADMIN_DEFAULT_PASSWORD="root" \
+  -v pgadmin_data:/var/lib/pgadmin \
+  -p 8085:80 \
+  --network=pg-network \
+  --name pgadmin \
+  dpage/pgadmin4
+```
+
+作用：启动pgAdmin 图形化管理工具
+参数说明：
+```bash
+-e PGADMIN_DEFAULT_EMAIL="admin@admin.com"
+```
+设置 pgAdmin登录邮箱：
+```bash
+-e PGADMIN_DEFAULT_EMAIL="admin@admin.com"
+```
+设置pgAdmin登录密码：
+```
+-v pgadmin_data:/var/lib/pgadmin
+```
+
+保存pgAdmin配置，例如已经注册过的Server
+```bash
+-p 8085:80
+```
+
+浏览器访问：
+```
+-p 8085:80
+```
+
+即可打开pgAdmin：
+```
+--network=pg-network
+```
+让pgAdmin和PostgreSQL 在同一个Docker网络中。
+
+11. pgAdmin 中注册 PostgreSQL Server
+浏览器地址
+``` bash
+http://127.0.0.1:8085/browser/
+```
+登录 pgAdmin
+```
+Email: admin@admin.com
+Password: root
+```
+
+Add New Server
+General:
+```
+Name: ny_taxi
+```
+Connection:
+```
+Host name/address: pgdatabase
+Port: 5432
+Maintenance database: postgres
+Username: root
+Password: root
+Save password: true
+```
+
+12. 在pgAdmin查询数据
+
+查询行数
+```
+select count(1)
+from public.yellow_taxi_trips_2021_1;
+```
+查看数据：
+```
+select *
+from public.yellow_taxi_trips_2021_1;
+```
+
+可以看到taxi trip records。
+
+13. 为什么开始用Docker Compose？
+Docker compose的作用是：
+把多个容器的配置写进一个YAML 文件
+然后用一条命令统一启动
+
+14. 创建docker-compose.yaml
+文件位置：
+```
+/workspaces/docker-workshop/pipeline/docker-compose.yaml
+```
+文件内容：
+``` yaml
+# 定义要启动的服务，也就是容器。 定义PostgreSQL服务名。 这个服务名也是Docker Compose网络中的hostname
+services:
+  pgdatabase:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: ny_taxi
+    volumes:
+      - ny_taxi_postgres_data:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: root
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "8085:80"
+
+volumes:
+  ny_taxi_postgres_data:
+  pgadmin_data:
+```
+
+15. 启动Docker Compose
+运行位置：
+Terminal，pipeline目录：
+```bash
+cd /workspaces/docker-workshop/pipeline
+```
+前台启动
+```bash
+docker compose up
+```
+作用：
+启动`docker-compose.yaml` 里定义的所有服务：
+pgdatabase
+pgadmin
+此时 terminal 会持续显示日志。
+
+后台启动：
+``` bash
+docker compose up -d
+```
+作用：
+后台启动容器，terminal可以继续输入命令。
+
+16. 查看Compose启动的容器
+```bash
+docker ps
+```
+应该看到类似：
+```
+pipeline-pgdatabase-1
+pipeline-pgadmin-1
+```
+
+17. 查看Compose自动创建的Network
+```bash
+docker network ls
+```
+通常会看到：
+```
+pipeline_default
+```
+解释：
+Docker Compose 会自动创建一个默认网络：
+```
+项目目录名_default
+```
+因为你的目录名是：
+```
+pipeline
+```
+所以network通常叫：
+pipeline_default
+
+18. 在Compose Network中运行 taxi_ingest
+
+代码
+```
+docker run -it --rm \
+  --network=pipeline_default \
+  taxi_ingest:v001 \
+  --pg-user=root \
+  --pg-pass=root \
+  --pg-host=pgdatabase \
+  --pg-port=5432 \
+  --pg-db=ny_taxi \
+  --target-table=yellow_taxi_trips_2021_1 \
+  --year=2021 \
+  --month=1 \
+  --chunksize=100000
+```
+作用：虽然 postgreSQL和 pgAdmin已经由Compose管理，但`taxi_ingest:v001`这里仍然用`docker run`临时运行一次。
+
+它加入Compose 创建的网络：
+```
+pipeline_default
+```
+然后通过：pgdatabase连接PostgresQL
+
+19.为什么 Compose 之后 pgAdmin 里一开始没有表？
+    
+因为Docker Compose创建的是新的服务环境
+即使数据库`ny_taxi` 已经创建，如果还没有重新跑 ingestion，就不会有；
+```
+yellow_taxi_trips_2021_1
+```
+
+所以需要重新ingestion：
+```
+docker run -it --rm \
+  --network=pipeline_default \
+  taxi_ingest:v001 \
+  --pg-user=root \
+  --pg-pass=root \
+  --pg-host=pgdatabase \
+  --pg-port=5432 \
+  --pg-db=ny_taxi \
+  --target-table=yellow_taxi_trips_2021_1 \
+  --year=2021 \
+  --month=1 \
+  --chunksize=100000
+```
+
+20. Compose 环境下pgAdmin 重新注册Server
+为什么要重新注册？
+
+因为 pgAdmin 是 Compose 新启动的容器。
+
+如果 pgAdmin volume 是新的，之前注册的 server 配置不会出现。
+
+所以重新 Add New Server：
+```text
+Host: pgdatabase
+Port: 5432
+Username: root
+Password: root
+Database: ny_taxi
+```
+
+保存后：
+以后只要：
+```
+docker compose up
+```
+
+pgAdmin 的server配置会保存在：
+pgadmin_data
+
+21. 最终pgAdmin验证
+查询表数量：
+在pgAdmin中展开：
+```
+Servers
+→ ny_taxi
+→ Databases
+→ ny_taxi
+→ Schemas
+→ public
+→ Tables
+```
+应该看到：
+```
+yellow_taxi_trips_2021_1
+```
+查询总行数：
+```
+select count(1)
+from public.yellow_taxi_trips_2021_1;
+```
+结果：
+1369765
+
+查询数据
+```sql
+select *
+from public.yellow_taxi_trips_2021_1
+```
+可以看到真实taxi records
+
+22. Git 保存代码
+查看状态：
+```
+git status
+```
+添加文件：
+```
+git add .
+```
+提交：
+```bash
+git commit -m "Add docker compose postgres pgadmin ingestion pipeline"
+```
+推送：
+```
+git push orgin main
+```
+如果push 被拒绝：
+```
+git pull --rebase origin main
+git push origin main
+```
+
+今天最终完成的架构：
+```
+Docker Compose
+│
+├── pgdatabase
+│   ├── image: postgres:18
+│   ├── database: ny_taxi
+│   ├── user: root
+│   ├── port: 5432
+│   └── volume: ny_taxi_postgres_data
+│
+├── pgadmin
+│   ├── image: dpage/pgadmin4
+│   ├── web: localhost:8085
+│   ├── login: admin@admin.com / root
+│   └── volume: pgadmin_data
+│
+└── taxi_ingest:v001
+    ├── runs ingest_data.py
+    ├── reads yellow_tripdata_2021-01.csv.gz
+    ├── connects to pgdatabase:5432
+    └── writes yellow_taxi_trips_2021_1
+```
 
 
 
