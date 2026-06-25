@@ -3393,5 +3393,6 @@ Docker Compose
 ```
 
 
+<img width="2536" height="1434" alt="image" src="https://github.com/user-attachments/assets/e4854be2-0d52-44e7-9d1c-2e73fe2c7a2b" />
 
 
