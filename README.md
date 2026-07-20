@@ -42,3 +42,55 @@ BI Analytics
 - Git
 - Docker
 ```
+
+# dbt Features
+## Data Modeling
+``` text
+staging
+intermediate
+marts
+```
+
+## Testing
+``` text
+8 automated tests:
+
+- not_null
+- accepted_values
+```
+
+## Freshness
+```text
+dbt source freshness
+
+warn:
+24 hours
+
+error:
+48 hours
+```
+
+
+## SCD Type 2
+```text
+Implemented dbt snapshot strategy:
+
+strategy = timestamp
+
+Tracking:
+
+dbt_valid_from
+dbt_valid_to
+```
+
+# Documentation
+![Uploading image.png…]()
+
+
+
+
+
+
+
+
+
