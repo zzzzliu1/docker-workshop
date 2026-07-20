@@ -16,10 +16,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dbt-bigquery" },
+    { name = "dbt-core" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dbt-bigquery", specifier = ">=1.11.3" }]
+requires-dist = [
+    { name = "dbt-bigquery", specifier = ">=1.11.3" },
+    { name = "dbt-core", specifier = ">=1.11.12" },
+]
 
 [[package]]
 name = "agate"

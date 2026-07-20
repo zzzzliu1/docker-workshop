@@ -1,0 +1,51 @@
+version: 2
+
+
+models:
+
+  - name: stg_yellow_tripdata
+
+    description: "Cleaned staging model for NYC yellow taxi trips"
+
+    columns:
+
+      - name: vendor_id
+        description: "Taxi vendor identifier"
+        tests:
+          - not_null
+
+
+      - name: pickup_datetime
+        description: "Trip pickup timestamp"
+        tests:
+          - not_null
+
+
+      - name: dropoff_datetime
+        description: "Trip dropoff timestamp"
+        tests:
+          - not_null
+
+
+      - name: payment_type
+
+        description: "Payment method used"
+
+        tests:
+
+          - not_null
+
+          - accepted_values:
+
+              arguments:
+
+                values:
+
+                  - 1
+                  - 2
+                  - 3
+                  - 4
+                  - 5
+                  - 6
+
+                quote: false

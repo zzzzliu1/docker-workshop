@@ -1,0 +1,25 @@
+version: 2
+
+models:
+
+  - name: fact_trips
+
+    description: >
+      Fact table containing cleaned NYC taxi trip transactions.
+
+    columns:
+
+      - name: vendor_id
+        description: Taxi vendor identifier
+        tests:
+          - not_null
+
+      - name: pickup_datetime
+        description: Trip pickup timestamp
+        tests:
+          - not_null
+
+      - name: dropoff_datetime
+        description: Trip dropoff timestamp
+        tests:
+          - not_null

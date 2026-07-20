@@ -101,7 +101,7 @@ ipython_config.py
 #   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
-# uv.lock
+
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
@@ -220,3 +220,24 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 *.parquet
+
+# Python
+.venv/
+__pycache__/
+
+# Google credentials
+credentials/
+*.json
+
+# Google Cloud SDK
+google-cloud-sdk/
+google-cloud-cli-linux-x86_64.tar.gz
+
+# dbt
+target/
+logs/
+
+# dbt profiles
+profiles.yml
+
+**/airflow/
