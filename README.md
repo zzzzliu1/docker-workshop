@@ -84,7 +84,7 @@ dbt_valid_to
 ```
 
 # Documentation
-![Uploading image.png…]()
+<img width="1264" height="540" alt="image" src="https://github.com/user-attachments/assets/d8a1f061-d646-495a-899b-14c46c11691f" />
 
 
 
