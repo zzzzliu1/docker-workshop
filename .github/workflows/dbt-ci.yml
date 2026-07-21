@@ -19,7 +19,6 @@ jobs:
 
     steps:
 
-
     - name: Checkout repository
       uses: actions/checkout@v4
 
@@ -67,7 +66,7 @@ jobs:
 
 
     - name: Run dbt build
-      working-directory: 04-analytics-engineering/taxi_rides_ny
+      working-directory: 03-data-transformation-dbt/taxi_rides_ny
       run: |
         dbt deps
         dbt build
