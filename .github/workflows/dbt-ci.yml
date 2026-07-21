@@ -12,28 +12,56 @@ on:
 
 jobs:
 
-  dbt-test:
+  dbt-build:
 
     runs-on: ubuntu-latest
 
 
     steps:
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
 
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+    - name: Install dbt-bigquery
+      run: |
+        pip install dbt-bigquery
 
 
-      - name: Install dependencies
-        run: |
-          cd 04-analytics-engineering
-          uv sync
+    - name: Authenticate Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+
+    - name: Create dbt profile
+      run: |
+        mkdir -p ~/.dbt
+
+        cat > ~/.dbt/profiles.yml <<EOF
+        taxi_rides_ny:
+          outputs:
+            dev:
+              dataset: taxi_rides_ny
+              location: US
+              method: service-account
+              priority: interactive
+              project: ${{ secrets.GCP_PROJECT_ID }}
+              threads: 4
+              type: bigquery
+          target: dev
+        EOF
+
+
+    - name: Run dbt build
+      working-directory: 04-analytics-engineering/taxi_rides_ny
+      run: |
+        dbt deps
+        dbt build
