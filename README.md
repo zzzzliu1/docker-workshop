@@ -86,6 +86,49 @@ dbt_valid_to
 # Documentation
 <img width="1264" height="540" alt="image" src="https://github.com/user-attachments/assets/d8a1f061-d646-495a-899b-14c46c11691f" />
 
+# PROJECT STRUCTURE
+``` text
+docker-workshop
+
+│
+├── 01-data-ingestion-airflow
+│
+│    ├── Dockerfile
+│    ├── docker-compose.yml
+│    ├── ingest_data.py
+│    ├── pipeline.py
+│    ├── notebook.ipynb
+│    └── uv.lock
+│
+│
+├── 02-data-warehouse-bigquery
+│
+│    ├── README.md
+│    ├── bigquery_partition.sql
+│    └── bigquery_cluster.sql
+│
+│
+├── 03-data-transformation-dbt
+│
+│    └── taxi_rides_ny
+│          ├── models
+│          ├── snapshots
+│          ├── seeds
+│          ├── tests
+│          └── dbt_project.yml
+│
+│
+├── 04-testing-monitoring
+│
+│
+├── .github
+│
+│    └── workflows
+│          └── dbt-ci.yml
+│
+│
+└── README.md
+```
 
 
 
