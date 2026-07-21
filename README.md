@@ -573,7 +573,7 @@ dbt build
 
 
 ```bash
-git clone https://github.com/zzzzliu1/docker-workshop.git
+git clone https://github.com/zzzzliu1/Data-Engineer-Project.git
 
 cd docker-workshop
 ```
