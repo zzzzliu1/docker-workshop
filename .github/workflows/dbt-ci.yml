@@ -52,6 +52,7 @@ jobs:
               dataset: taxi_rides_ny
               location: US
               method: service-account
+              keyfile: ${{ runner.temp }}/gcp-key.json
               priority: interactive
               project: ${{ secrets.GCP_PROJECT_ID }}
               threads: 4
